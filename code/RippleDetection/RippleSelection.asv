@@ -1,0 +1,297 @@
+clc
+clear 
+close all
+
+addpath(genpath('/space/seh9/2/halgdev/projects/iverzh/ripples/code'))
+
+addpath(genpath('/space/seh8/1/halgdev/projects/cdickey/packages'))
+addpath(genpath('/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple'))
+
+addpath(genpath('/home/jgarret/mat')) %mask2bounds
+addpath(genpath('/home/jgarret/ArtifactDetection'))
+
+addpath(genpath('/space/seh8/1/halgdev/projects/cdickey/eeglab14_1_2b/'))
+rmpath(genpath('/space/seh8/1/halgdev/projects/cdickey/eeglab14_1_2b/functions/octavefunc'))
+
+%% Inputs
+
+
+
+% sEEG subjects from Cleveland Clinic
+subj_list_full = {'CC04','CC08','CC15','CC17','CC18','CC20','CC23','CC24','CC25','CC26',...
+                  'CC30','CC31','CC39','CC49','CC55','CC60', 'CC69','CC91'};
+
+runList = 1:length(subj_list_full); 
+recordingState = 'sleep'; % sleep o
+locations = {'NC','HC'}; %{'NC','HC','TH','AMY'};
+modifier = '';
+
+IISflag = 1; %1 - check for spikes. 0 - do not check for spikes
+if strcmp(recordingState,'sleep') || strcmp(recordingState,'REM')
+    isSleep = 1;
+elseif strcmp(recordingState,'waking')
+    isSleep = 0;
+else
+    error("incorrect RecordingState argument. Can only be 'sleep', 'waking', 'REM'")
+end
+
+masterFolder = '/space/seh9/2/halgdev/projects/iverzh/ripples/Figures';
+if ~isfolder(masterFolder); mkdir(masterFolder); end
+
+matExportFolder = '/space/seh9/2/halgdev/projects/iverzh/ripples/matFiles';
+if ~isfolder(matExportFolder); mkdir(matExportFolder); end
+
+preProcExportFolder = '/space/seh9/2/halgdev/projects/iverzh/ripples/preProc';
+if ~isfolder(preProcExportFolder); mkdir(preProcExportFolder); end
+
+parcelDir = '/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple/CC/PPT_labels/';
+badChanDir = '/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple/bad_chan';
+
+winSec = 2; % pre and post event window in seconds
+spikeCheck = 500; %+/- for spike check (10 Hz) abs(LFP) > 1000
+rippleWindowSec = 0.100; %+/- window used to compute ripple ocsillation freq. in seconds
+IIScheckSec = 0.500; %+/- in sec
+
+% fs = 512; %Hz sample rate
+fs = 1000;
+rippleband = [70 100];
+
+RejectParams.RBHFzscore = [0, 0]; %Reject zscore(Ripple) - zscore(HF) < RBHFzscore
+RejectParams.sharpzscore = [7, 1]; %Reject zscore(100+hZ) > sharpzscore
+RejectParams.LFPdiff = [50, 0]; %Reject zscore(LFPdiff) > LFPdiffzscore 
+RejectParams.LFPdiffzscore = [4, 0]; %Reject stepwise jumps in UAB data
+RejectParams.RBzscore = [3, 1]; %Reject RBAmp < 2
+RejectParams.LFPthresh = [1000, 1];
+RejectParams.minDuration = [0.025, 1]; % in seconds
+
+
+sleepfiles_set = {[2,3,7],[2,5,9,10],[3,5,6,7],[1],...
+        [2,3,5],[4,10,12],[5,6,7,9,11],[2,3,6,8],[1,2,4,5,7],...
+        [3,7,8],[1,2,5],[2,4,5,6,7,8,10,11],[3,8,9,12],...
+        [2,6,8],[2,6,7],[1,2,3,5,7,10],[1,3,4,5]};
+
+sleepfiles_set_wake = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+
+
+%%
+fprintf('Running Ripple Selection ...\n')
+
+for subj = runList% [2,4,7] %[14,15,20] %[1,2,3,5,6,7,8,9,11] %[11,16,24] %[5,8,9,11,16,24] %[19,21,22] %25:27 %  11:numel(subj_list_full) %[19,21,22] %[3,14:17] %[17:20] %[4,5,8,15] %1:numel(subj_list_full) %[4,5,7] %20:22 %[1,3,6,7,10,11,13,16,17] %%  %[14, 15] %[11,13,14,15] %21 %15:17 %[3,4,5,8,10,11,13,14,15]  %loop through subjects
+    subject = subj_list_full{subj};
+    
+    fprintf('Loading Subject %s ...\n', subject)
+
+        
+    if strcmp(recordingState,'wake')
+        sleepfiles_set = sleepfiles_set_wake;
+    end
+
+    if contains(subject,'CC')
+        parcelFiles = dir(fullfile(parcelDir,['*',subject,'*.mat']));
+        load(fullfile(parcelFiles(1).folder, parcelFiles(1).name)) 
+    end
+    
+    badChanFile = fullfile(badChanDir,[subject,'_bad_chan.mat']);
+    if isfile(badChanFile); load(badChanFile);
+    else; bad_chan = cell(0);
+    end
+    
+
+    for l = 1:length(locations)
+
+        location = locations{l};
+        
+        fprintf('Loading %s Data...\n', location)
+        
+        tag = [recordingState,'_',location,'_',modifier];
+        rippleAllSleepSet = struct([]);
+        shift = 0;
+        saveRippleStats = true;
+        for s = 1:length(sleepfiles_set{subj})
+            sleep_ID = sleepfiles_set{subj}(s);
+            
+            fprintf('Loading segment %i ...\n', sleep_ID)
+
+
+                
+            if exist('data','var')
+                clear data
+            end
+             
+            if exist('sleepdata','var')
+                clear sleepdata
+            end
+            
+            if strcmp(location,'NC')
+                fripp = sprintf('/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple/NC_ripple/%s/noWaveletReject/segment_indices/%s_%01d_N23_polchecked_newRipp.mat', subject, recordingState, sleep_ID);
+                f     = sprintf('/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple/NC_ripple/%s/segment_indices/%s_%01d_N23_seg_NC.mat', subject,  recordingState, sleep_ID);
+            elseif strcmp(location,'HC')
+                fripp = sprintf('/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple/NC_ripple/%s/noWaveletReject/HC/%s_%01d_N23_polchecked_newRipp.mat', subject, recordingState,sleep_ID);
+                f = sprintf('/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple/NC_ripple/%s/noWaveletReject/HC/%s_%s%01d_N23.mat', subject,  recordingState, recordingState,sleep_ID);
+
+            end
+
+            try
+                load(fripp)
+                load(f)
+            catch
+                WarningString = ['could not load ',f];
+                warning(WarningString)
+                saveRippleStats = false;
+                break
+            end
+
+            if exist('sfreq','var')
+                fs = sfreq;
+            end
+            
+            if exist('all_ripple_locs','var')
+                good_ripple_locs_set = all_ripple_locs;
+            end
+
+            if exist('data','var')
+                BroadbandData = data;
+                clear data
+            elseif exist('sleepdata','var')
+                BroadbandData = sleepdata;
+                clear sleepdata
+            elseif exist('datNREM','var')
+                BroadbandData = datNREM';
+            elseif exist('datREM','var')
+                BroadbandData = datREM';
+
+            end
+            
+           
+            try 
+                load(sprintf('/space/seh8/1/halgdev/projects/cdickey/ripple/CortRipple/NC_ripple/%s/%s/nan_edge_mask.mat', subject, recordingState),'nan_edge_mask') 
+            catch 
+                nan_edge_mask = false(1,size(BroadbandData,2));
+            end
+            
+
+            if strcmp(recordingState,'sleep')
+                polCheckFiles = dir(fullfile(preProcExportFolder,[subject,'_',num2str(sleep_ID),'_',tag,'_polCheck.mat']));
+
+                if isempty(polCheckFiles)
+                    polCheck = checkPolarity(BroadbandData,fs); %check polarity by comparing slow oscillations w HG
+                    try
+                        save(fullfile(preProcExportFolder,[subject,'_',num2str(sleep_ID),'_',tag,'_polCheck.mat']), 'polCheck', '-v7.3')
+                    catch
+                        warning('could not save polarity check')
+                    end
+                else
+                    load(fullfile(preProcExportFolder,[subject,'_',num2str(sleep_ID),'_',tag,'_polCheck.mat']))
+                end
+            else
+                polCheck = ones(size(BroadbandData));
+            end
+
+            BroadbandData = polCheck .* BroadbandData;
+
+            if IISflag
+                spikeCheckFiles = dir(fullfile(preProcExportFolder,[subject,'_',num2str(sleep_ID),'_',tag,'_spikeCheck.mat']));
+                if isempty(spikeCheckFiles)
+                    [spikeMask,spikeBounds] = detectSpikes_IAV(BroadbandData', fs);
+                    try
+                        save(fullfile(preProcExportFolder,[subject,'_',num2str(sleep_ID),'_',tag,'_spikeCheck.mat']),'spikeBounds','spikeMask', '-v7.3')
+                    catch
+                        warning('could not save spike check')
+                    end
+                else
+                    load(fullfile(preProcExportFolder,[subject,'_',num2str(sleep_ID),'_',tag,'_spikeCheck.mat']))
+                end
+            else 
+                spikeMask = zeros(size(BroadbandData));
+            end
+
+            if isa(chan_labels,'double'); chan_labels = cellstr(string(chan_labels)); end
+
+            for ch = 1:size(BroadbandData,1)
+                initialRipples = good_ripple_locs_set{ch};
+       
+                fsNew = fs;
+                win = round(winSec * fsNew); %win in samples.
+                rippleWindow = round(rippleWindowSec * fsNew); %ripple window in samples
+                IIScheck = round(IIScheckSec * fsNew); %spike check window in samples 
+                
+                checkDiff = [diff(initialRipples) 5];
+                initialRipples(checkDiff<5) = [];
+                [rippleSleepSet,rejectVec] = AnalyzeRipple(BroadbandData, rippleband, win, rippleWindow, ...
+                                                           IIScheck, spikeMask, nan_edge_mask, IISflag, ...
+                                                           ch, initialRipples, RejectParams, fsNew, ...
+                                                           chan_labels, shift,1);
+
+                if isempty(rippleAllSleepSet)
+                    fn = fieldnames(rippleSleepSet);
+                    for ch2 = 1:length(chan_labels)
+                        for f = 1:numel(fn)
+                            rippleAllSleepSet(1).(fn{f}){ch2} = [];
+                        end
+
+                    end
+                end
+
+
+                fn = fieldnames(rippleSleepSet);
+                if numel(rippleSleepSet.goodRipples) > 5
+                    for f = 1:numel(fn)
+                        fDat = rippleSleepSet.(fn{f});
+                        DIM = size(fDat,1);
+                        if DIM > 1 || size(fDat,2) == 4001
+                            rippleAllSleepSet.(fn{f}){ch} = [rippleAllSleepSet.(fn{f}){ch}; fDat];
+                        elseif DIM == 1
+                            rippleAllSleepSet.(fn{f}){ch} = [rippleAllSleepSet.(fn{f}){ch}, fDat];
+                        end
+
+                    end
+                end
+
+                rippleAllSleepSet.rejectVec{ch} = rejectVec;
+            end
+
+            rippleAllSleepSet.recordingLength(s) = size(BroadbandData,2);
+
+            locs_sleep = nan(1, 5e5); %matrix to store ripple locs by sleep set
+            for ch = 1:size(BroadbandData,1)
+                       %save ripple indicies by sleep set
+                    locs_sleep(1:length(rippleAllSleepSet.goodRipples{ch})) = rippleAllSleepSet.goodRipples{ch};
+                    rippleAllSleepSet.locs_sleep{ch}(s,1:size(locs_sleep,2)) = locs_sleep;
+            end
+
+            shift = shift + size(BroadbandData,2); %shift for ripple indexing
+
+
+        end
+
+        %% Exporting Ripple Data
+        if saveRippleStats
+            plotStats =  computeRippleStats(rippleAllSleepSet, fs);
+
+            rippleStats = plotStats;
+            for ch = 1:size(BroadbandData,1)
+                rippleStats.locs{ch} = rippleAllSleepSet.goodRipplesConcat{ch};
+                rippleStats.locs_sleep{ch} = rippleAllSleepSet.locs_sleep{ch};
+
+
+                density = length(rippleAllSleepSet.goodRipples{ch}) / sum(rippleAllSleepSet.recordingLength) * fs * 60;
+                rippleStats.density{ch} = density;
+            end
+
+            rippleStats.recordingLength = rippleAllSleepSet.recordingLength;
+            rippleStats.fs = fs;
+            rippleStats.chanLabels = chan_labels;
+            rippleStats.RejectParams = RejectParams;
+            rippleStats.rejectVec = rippleAllSleepSet.rejectVec;
+            rippleStats.RB = rippleband;
+            rippleStats.IISflag = IISflag;
+            save(sprintf('%s/%s_ripple_stats_%s.mat', matExportFolder, subject, tag), 'rippleStats', '-v7.3')
+        end
+    end
+    
+    
+end
+    
+    
+    
+   

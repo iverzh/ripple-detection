@@ -1,0 +1,119 @@
+function rippleStatsFinal =  computeRippleStats(events, fs)
+
+
+if isa(events.raw, 'cell')
+    nChan = size(events.raw,2);
+else
+    nChan = 1;
+
+    fn = fieldnames(events);
+    reformatEvents = struct([]);
+
+    for f = 1:length(fn)
+        reformatEvents(1).(fn{f}){1} = events.(fn{f});
+    end
+
+    events = reformatEvents;
+
+
+end
+% pre-allocate
+plotStats.centeredInd    = cell(1,nChan);
+plotStats.duration       = cell(1,nChan);
+plotStats.HGz            = cell(1,nChan);
+plotStats.InterRipPeriod = cell(1,nChan);
+plotStats.oscFreq        = cell(1,nChan);
+plotStats.rippleAmp      = cell(1,nChan);
+plotStats.window         = cell(1,nChan);
+
+for ch = 1:nChan
+    nRip = length(events.goodRipples{ch});
+    centered = ones(nRip,1);
+    if nRip > 0
+        for rip = 1:nRip
+
+            %Ripple Amplitude
+            plotStats.rippleAmp{ch}(rip) = events.rippleAmp{ch}(rip);
+
+            %Ripple zero cross
+            center = round(size(events.raw{ch}(rip, :),2)/2);
+            rippleBand = events.rippleband{ch}(rip, :);
+            RBzscore = events.RBzscore{ch}(rip,:);
+            HGzscore = events.HGzscore{ch}(rip,:);
+
+            score = Inf;
+            winStart = 0;
+            while score > 0.75 && winStart < 200
+                score = abs(RBzscore(center-winStart));
+                winStart = winStart + 1;
+            end
+
+            score = Inf;
+            winEnd = 0;
+            while score > 0.75 && winEnd < 200 
+                score = abs(RBzscore(center+winEnd));
+                winEnd = winEnd + 1;
+            end
+
+            plotStats.duration{ch}(rip) = (winStart + winEnd) * (1/fs) * 1000; %ms
+
+            loc = events.goodRipplesConcat{ch}(rip);
+            plotStats.window{ch}(rip,:) = [loc-winStart, loc+winEnd];
+            plotStats.HGz{ch}(rip) = mean(HGzscore(center-winStart:center+winEnd));
+
+            window = center-winStart:center+winEnd;
+            winData = rippleBand(window);
+            phases = angle(hilbert((winData))); % / pi;
+            
+            zcs = find(winData(1:end-1).*winData(2:end) < 0); %zero crossings
+            
+            if ~isempty(zcs)
+                % count additional oscillation that extends beyond zero
+                % crossings
+                unWrapStart = unwrap(phases(1:zcs(1)));
+                add1 =  ( unWrapStart(end) - unWrapStart(1) ) / pi;
+
+                unWrapEnd = unwrap(phases(zcs(end):end));
+                add2 =  ( unWrapEnd(end) - unWrapEnd(1) ) / pi;
+
+
+                nCycles  = (length(zcs) + add1 + add2) /2;
+
+
+
+                freq = round( nCycles / (length(window)/fs)*10)/10;
+            else
+                freq = 0;
+            end
+        
+        
+     
+
+            plotStats.oscFreq{ch}(rip) = freq;
+
+
+        end    
+    end
+    
+    plotStats.InterRipPeriod{ch} = diff(events.goodRipplesConcat{ch}) / fs ;
+
+% %     centered(centered==0)=1;
+%     centered = logical(centered);
+%     if length(centered) > 1
+%         rippleStatsFinal.InterRipPeriod{ch} = diff(events.goodRipplesConcat{ch}(centered)) / fs ;
+%         rippleStatsFinal.duration{ch} = plotStats.duration{ch}(centered);
+%         rippleStatsFinal.oscFreq{ch} = plotStats.oscFreq{ch}(centered);
+%         rippleStatsFinal.rippleAmp{ch} = plotStats.rippleAmp{ch}(centered);
+%         rippleStatsFinal.centeredInd{ch} = centered;
+%         rippleStatsFinal.window{ch} = plotStats.window{ch};
+%         rippleStatsFinal.HGz{ch} = plotStats.HGz{ch};
+%     end    
+
+
+end
+
+rippleStatsFinal = plotStats;
+
+
+
+return

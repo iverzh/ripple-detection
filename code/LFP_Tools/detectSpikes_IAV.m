@@ -1,6 +1,7 @@
 function [spike_mask, spike_regs] = detectSpikes_IAV(dat, fs, hge, hf_factor, spike_factor, spike_score_cutoff, spike_pad, hf_shift)
 % v2 edit to adjust for sampling rate
-
+nanMask = isnan(dat(:,1));
+dat(nanMask,:) = 0;
 % CHARLIE: I used the following parameters to good effect when I tested
 % this on your cortical high gamma events:
 if nargin < 8
@@ -53,7 +54,7 @@ toc
 
 % Spike convolution
 
-load('./LFP_tools/wavelets_detrended.mat', 'spike_wavelet2')
+load('/home/jgarret/ArtifactDetection/wavelets_detrended.mat', 'spike_wavelet2')
 if fs ~= 500
     spike_wavelet2 = resample(spike_wavelet2,fs,500);
 end

@@ -1,6 +1,7 @@
 % load ch x samples "raw"
 function polCheck = checkPolarity(raw, sfreq) 
 
+raw(isnan(raw)) = 0;
 % detect positive and negative deflections
 [SOmat, ~] = detectSO(raw, sfreq, [], 20);
 

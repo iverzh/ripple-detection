@@ -20,12 +20,11 @@ addpath(genpath('.'))
 
 
 % sEEG subjects 
-subj_list_full = {'S1','S2','S3','S4','S5','S6','S7','S8','S9','S10',...
-                  'S11','S12','S13','S14','S15', 'S16','S17'};
+subj_list_full = {'MG63'};
 segmentFiles_set = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}; %list of segement Ids used for each segment (if multiple segments used).
 
 runList = 1;%:length(subj_list_full); 
-recordingState = 'sleep'; % sleep or wake
+recordingState = 'sleep'; % sleep    or wake
 modifier = '';
 IISflag = 1; %1 - check for spikes. 0 - do not check for spikes
 
@@ -37,7 +36,7 @@ rippleband = [70 100]; %ripple band in Hz.
 
 rippPrelimDir = './'; % If detectRipples is false, path to preliminary ripple detection mat file. 
                       % If detectRipples is true, path to preliminary ripple detection output folder.
-LFPdir ='./'; % path to LFP mat file. LFP variable should be named 'data' and be formatted as nChannels x time.
+LFPdir ='/space/seh9/2/halgdev/projects/iverzh/data/UtahArrayData/MG63/data_1kHz/MG63_1kHz_unitsRemoved_wake.mat'; % path to LFP mat file. LFP variable should be named 'data' and be formatted as nChannels x time.
 if strcmp(recordingState,'sleep')
     isSleep = 1;
 elseif strcmp(recordingState,'waking')
@@ -68,14 +67,16 @@ IIScheckSec = 0.500; %+/- in secs
 % 0 in position 2 indiciates rejejction criterion is not used.
 
 RejectParams.RBHFzscore = [0, 0]; %Reject zscore(Ripple) - zscore(HF) < RBHFzscore
-RejectParams.sharpzscore = [7, 1]; %100 Hz highpass filter z score threshold
-RejectParams.LFPdiff = [50, 0]; %LFP derivative absolute threshold in microV
-RejectParams.LFPdiffzscore = [4, 0]; %LFP derivative z score threshold
-RejectParams.RBzscore = [3, 1]; % rippleband z score threshold
-RejectParams.LFPthresh = [1000, 1]; %LFP rejection threshold
-RejectParams.minDuration = [0.025, 1]; % minimum duration in seconds
+RejectParams.sharpzscore = [7, 1]; %Reject zscore(100+hZ) > sharpzscore
+RejectParams.LFPdiff = [50, 0]; %Reject zscore(LFPdiff) > LFPdiffzscore 
+RejectParams.LFPdiffzscore = [4, 0]; %Reject stepwise jumps in UAB data
+RejectParams.RBzscore = [3, 1]; %Reject RBAmp < 2
+RejectParams.LFPthresh = [1000, 1];
+RejectParams.minDuration = [0.025, 1]; % in seconds
 
-
+RejectParams.bndParams.smthKrnl=100;
+RejectParams.bndParams.srchWinSz=1/2; %of kernel size
+RejectParams.bndParams.scoreThresh=0.75;
 
 
 
@@ -104,43 +105,7 @@ for subj = runList
         fprintf('Loading sleep segment %i ...\n', segment_ID)
         load(LFPdir) %this may need to be editted to refelct user file architecture
         
-        if detectRipples
-            load('./RippleDetection/detectionMethods_default.mat')
-            methods.separation_flag = 0;
-            methods.adjacent_merge = 1;
-            methods.adjacency = 25; % in sampling points
-            % broader range for freq center investigation
-            methods.hp_freq_ST = 60;  % in Hz
-            methods.lp_freq_ST = 120;
-            methods.looseEval = 1;
-            methods.gap_thresh = 0.1;   % set as 100 ms for now; might want to turn this off for NC
-            methods.do_pmax = 0;   % flag off since no hand-marked template for cortical ripples (there's no "sharp-wave" equivalent as far as we know)
-            methods.do_wavelet = 0;  % next 7 params are to tweak outlier_wavedecompC_dbtest2.m
-            methods.time_bin = 2;
-            methods.wavthresh_Haar = 6;
-            methods.wavthresh_RL1 = 6;
-            methods.wavthresh_RL2 = 8;
-            methods.wavthresh_RL3 = 8;
-            methods.wavthresh_RL4 = 5;
-            methods.wavthresh_RL5 = 4;
-            methods.HP_reject = 1;
-            methods.HP_thresh = 3;   % reject based on high gamma powe
-            methods.parpool_size = 16;
-% 
-            gMsk = ones(1, size(LFP,1));    
-            mask = ones(1, size(LFP,2));    
-            rippleDetect(data,fs,savedir,1,gMsk, methods, mask, recordingState);
-        else
-
-            try
-                load(detectExportFolder)
-            catch
-                WarningString = ['could not load ',f];
-                warning(WarningString)
-                saveRippleStats = false;
-                break
-            end
-        end %detect prelim ripples
+       
 
         if exist('sfreq','var')
             fs = sfreq;
@@ -149,13 +114,15 @@ for subj = runList
         if exist('all_ripple_locs','var')
             good_ripple_locs_set = all_ripple_locs;
         end
-
+        
         if exist('data','var')
             BroadbandData = data;
             clear data
         elseif exist('sleepdata','var')
             BroadbandData = sleepdata;
             clear sleepdata
+        elseif ~exist('BroadbandData','var')
+            error('Broadband data variable does not exist\n')
     
         end
         
@@ -204,33 +171,31 @@ for subj = runList
 
         if isa(chan_labels,'double'); chan_labels = cellstr(string(chan_labels)); end
 
-        for ch = 1:3 %size(BroadbandData,1)
-            initialRipples = good_ripple_locs_set{ch};
-   
+        for ch = 1:size(BroadbandData,1)
+            [initialRipples, ~, ~]  = DetectHighFreqEvents(BroadbandData(ch,:),rippleband,RejectParams,fs,nan_edge_mask,3,1);
             fsNew = fs;
+            data = BroadbandData;
             win = round(winSec * fsNew); %win in samples.
             rippleWindow = round(rippleWindowSec * fsNew); %ripple window in samples
             IIScheck = round(IIScheckSec * fsNew); %spike check window in samples 
             
             checkDiff = [diff(initialRipples) 5];
             initialRipples(checkDiff<5) = [];
-            [rippleSleepSet,rejectVec] = AnalyzeRipple(BroadbandData, rippleband, win, rippleWindow, ...
-                                                       IIScheck, spikeMask, nan_edge_mask, IISflag, ...
-                                                       ch, initialRipples, RejectParams, fsNew, ...
-                                                       chan_labels, shift,1);
+            [rippleSleepSet,rejectVec] = AnalyzeRipple(data, rippleband, win, rippleWindow, IIScheck, spikeMask, nan_edge_mask, IISflag, ...
+                                                          ch, initialRipples, RejectParams, fsNew, chan_labels, shift,1);
 
-            rippleStatsSleepSet =  computeRippleStats(rippleSleepSet, fs);
+    
+            rippleStatsSleepSet =  computeRippleStats(rippleSleepSet, RejectParams, fs);
 
-
-
-
+           
             rippleStatsSleepSet.locs{1} = rippleSleepSet.goodRipples;
             rippleStatsSleepSet.rejectVec{1} = rejectVec;
-            density = length(rippleStatsSleepSet.locs{1} / length(BroadbandData)) * fs * 60;
+            density = length(rippleStatsSleepSet.locs{1}) / length(BroadbandData) * fs * 60;
             rippleStatsSleepSet.density{ch} = density;
             
-            rippleStatsSleepSet = patchRippleStats(rippleStatsSleepSet, BroadbandData(ch,:), [], fs, 0);
+            rippleStatsSleepSet = patchRippleStats(rippleStatsSleepSet, BroadbandData(ch,:), [], fs, 0, 0);
 
+           
             if isempty(rippleStatsAllSleepSet)
                 fn = fieldnames(rippleStatsSleepSet);
                 for ch2 = 1:length(chan_labels)
@@ -262,8 +227,6 @@ for subj = runList
             end
 
             rippleStatsAllSleepSet.rejectVec{ch} = rejectVec;
-
-
         end
 
         rippleStatsAllSleepSet.recordingLength(s) = size(BroadbandData,2);
@@ -271,7 +234,7 @@ for subj = runList
         locs_sleep = nan(1, 5e5); %matrix to store ripple locs by sleep set
         for ch = 1:size(BroadbandData,1)
                    %save ripple indicies by sleep set
-                locs_sleep(1:length(rippleStatsAllSleepSet.goodRipples{ch})) = rippleStatsAllSleepSet.locs{ch};
+                locs_sleep(1:length(rippleStatsAllSleepSet.locs{ch})) = rippleStatsAllSleepSet.locs{ch};
                 rippleStatsAllSleepSet.locs_sleep{ch}(s,1:size(locs_sleep,2)) = locs_sleep;
         end
 
@@ -282,28 +245,18 @@ for subj = runList
 
     %% Exporting Ripple Data
     if saveRippleStats
-        plotStats =  computeRippleStats(rippleAllSleepSet, fs);
+        rippleStats = rippleStatsAllSleepSet;
+        for ch = 1:size(BroadbandData,1)              
 
-        rippleStats = plotStats;
-        for ch = 1:size(BroadbandData,1)
-            rippleStats.locs{ch} = rippleAllSleepSet.goodRipplesConcat{ch};
-            rippleStats.locs_sleep{ch} = rippleAllSleepSet.locs_sleep{ch};
-
-
-            density = length(rippleAllSleepSet.goodRipples{ch}) / sum(rippleAllSleepSet.recordingLength) * fs * 60;
+            density = length(rippleStatsAllSleepSet.locs{ch}) / sum(rippleStats.recordingLength) * fs * 60;
             rippleStats.density{ch} = density;
         end
 
-        rippleStats.recordingLength = rippleAllSleepSet.recordingLength;
         rippleStats.fs = fs;
         rippleStats.chanLabels = chan_labels;
         rippleStats.RejectParams = RejectParams;
-        rippleStats.rejectVec = rippleAllSleepSet.rejectVec;
         rippleStats.RB = rippleband;
         rippleStats.IISflag = IISflag;
-
-
-
         save(sprintf('%s/%s_ripple_stats_%s.mat', matExportFolder, subject, tag), 'rippleStats', '-v7.3')
     end
 

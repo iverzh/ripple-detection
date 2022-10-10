@@ -1,4 +1,4 @@
- function [rippleSleepSet, rejectVec] = AnalyzeRipple(sleepdata, rippleband, win, rippleWindow, IIScheck, spikeMask, nan_edge_mask, ...
+ function [rippleSleepSet, rejectVec] = AnalyzeRipple(data, rippleband, win, rippleWindow, IIScheck, spikeMask, nan_edge_mask, ...
                                                       IISflag, ch, goodRipples, RejectParams, fs, chan_labels, shift, rejectFlag)
 
 % notch filter data to remove line noise (60 Hz + harmonics)
@@ -9,45 +9,52 @@
 %     sleepdata = filtfilt(b,a,sleepdataOrig);
 % end
 
-sleepdata = sleepdata(ch,:);
+data = data(ch,:);
+
+if any(isnan(data))
+    nanMask = isnan(data); 
+    data(nanMask) = 0; 
+else
+    nanMask = false(1,length(data));
+end
 
 % bandpass at ripple band (70-100 Hz)
 [b,a] = butter(3,rippleband/(fs/2));
-ripple.rippleband = filtfilt(b,a,sleepdata); % zero phase
+ripple.rippleband = filtfilt(b,a,data); % zero phase
 
 ind = find(ripple.rippleband>500);
 for ii = ind
     if ii < fs  
        ripple.rippleband(1:ii+fs) = 0;
-       sleepdata(1:ii+fs)         = 0;
+       data(1:ii+fs)         = 0;
     elseif ii+fs > length(ripple.rippleband)
        ripple.rippleband(ii-fs:end) = 0;
-       sleepdata(ii-fs:end)         = 0;
+       data(ii-fs:end)         = 0;
     else
        ripple.rippleband(ii-fs:ii+fs) = 0;
-       sleepdata(ii-fs:ii+fs)         = 0;
+       data(ii-fs:ii+fs)         = 0;
     end
 end
 
 % bandpass at low frequency band (25-50 Hz) 
 [b,a] = butter(3,100/(fs/2),'high');
-ripple.sharpspike = filtfilt(b,a,sleepdata); % zero phase
+ripple.sharpspike = filtfilt(b,a,data); % zero phase
 
 
 % bandpass at high frequency band (200- Hz) 
 % [b,a] = butter(3,200/(fs/2), 'high');
 [b,a] = butter(3,200/(fs/2), 'high');
-ripple.highfreqband = filtfilt(b,a,sleepdata); % zero phase
+ripple.highfreqband = filtfilt(b,a,data); % zero phase
 
 % bandpass at middle frequency band (20- Hz) (too detect large epileptic events in LFP) 
 % [b,a] = butter(3,150/(fs/2), 'high');
 [b,a] = butter(3,150/(fs/2), 'high');
-ripple.HGband = filtfilt(b,a,sleepdata); % zero phase
+ripple.HGband = filtfilt(b,a,data); % zero phase
 
 % bandpass at low frequency band (25-50 Hz) 
 [b,a] = butter(3,[100 200]/(fs/2));
 % [b,a] = butter(3,100/(fs/2),'high');
-ripple.band100200 = filtfilt(b,a,sleepdata); % zero phase
+ripple.band100200 = filtfilt(b,a,data); % zero phase
 
 
 a = sprintf('notch and bandpass filter channel %i\n', ch);
@@ -57,31 +64,37 @@ zscore_xnan = @(x) bsxfun(@rdivide, bsxfun(@minus, x, mean(x,'omitnan')), std(x,
 
 nanData = abs(hilbert(ripple.rippleband));
 nanData(nan_edge_mask) = NaN;
+nanData(nanMask) = NaN;
 ripple.RBzscore = zscore_xnan(nanData); %zscore of env of hilbert amplitudes
 
 nanData = abs(hilbert(ripple.highfreqband));
 nanData(nan_edge_mask) = NaN;
+nanData(nanMask) = NaN;
 ripple.HFzscore = zscore_xnan(nanData);
 
 nanData = abs(hilbert(ripple.sharpspike));
 nanData(nan_edge_mask) = NaN;
+nanData(nanMask) = NaN;
 ripple.sharpzscore = zscore_xnan(nanData);
 
 nanData = abs(hilbert(ripple.HGband));
 nanData(nan_edge_mask) = NaN;
+nanData(nanMask) = NaN;
 ripple.HGzscore = zscore_xnan(nanData);
 
 nanData = abs(hilbert(ripple.band100200));
 nanData(nan_edge_mask) = NaN;
+nanData(nanMask) = NaN;
 ripple.zscore100200 = zscore_xnan(nanData);
 
-nanData = sleepdata;
+nanData = data;
 nanData(nan_edge_mask) = NaN;
+nanData(nanMask) = NaN;
 ripple.diffLFPzscore  = abs(zscore_xnan(diff(nanData))); %zscore of LFP numerical derivative 
 
-ripple.diffLFP  = abs(diff(sleepdata)); %zscore of LFP numerical derivative 
+ripple.diffLFP  = abs(diff(data)); %zscore of LFP numerical derivative 
 
-ripple.LFP = sleepdata; 
+ripple.LFP = data; 
 
 ripple.ind = goodRipples;
            

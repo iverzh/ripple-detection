@@ -12,13 +12,19 @@ else
     fs = 1e4;
 end
 
-
+if any(isnan(data))
+    nanMask = isnan(data); 
+    data(nanMask) = 0; 
+else
+    nanMask = false(1,length(data));
+end
 
 [b,a] = butter(3,bandpassRange/(fs/2));
 bandpass = filtfilt(b,a,data); % zero phase
 
 nanData = abs(hilbert(bandpass));
 nanData(nan_edge_mask) = NaN;
+nanData(nanMask) = NaN;
 bandpass_zscore = zscore_xnan(nanData); % zscore of env of hilbert amplitudes
 
 

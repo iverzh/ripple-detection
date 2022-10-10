@@ -1,4 +1,4 @@
-function rippleStats = patchRippleStats(rippleStats, LFPdat, LFPdat_other, sfreq, do_plots)
+function rippleStats = patchRippleStats(rippleStats, LFPdat, LFPdat_other, sfreq, do_plots, checkSpike)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % Applies further rejection criteria to ripples saved in rippleStats
@@ -33,6 +33,12 @@ spike_offset = 30 * (sfreq/1000);
 
 % reject if ratio of the largest to third largest peak-to-peak exceeds 3
 patch_param.peak_ratio_thresh = 2.5;
+if any(isnan(LFPdat))
+    nanMask = isnan(LFPdat); 
+    LFPdat(nanMask) = 0; 
+else
+    nanMask = false(1,length(LFPdat));
+end
 
 % bandpass at ripple band
 [b,a] = butter(3,ripple_band/(sfreq/2));
@@ -49,11 +55,14 @@ end
 
 % NC + HC data
 LFPdat_all = [LFPdat; LFPdat_other];
-
+if checkSpike
 % check if any overlapping IIS
-spike_mask = detectSpikes_IAV(LFPdat_all', sfreq, [], patch_param.hf_factor, patch_param.spike_factor,...
-    patch_param.spike_score_cutoff, patch_param.spike_pad, patch_param.hf_shift);
-
+    spike_mask = detectSpikes_IAV(LFPdat_all', sfreq, [], patch_param.hf_factor, patch_param.spike_factor,...
+        patch_param.spike_score_cutoff, patch_param.spike_pad, patch_param.hf_shift);
+else
+    spike_mask = false(1,length(LFPdat_all));
+end
+LFPdat(nanMask) = nan;
 spike_mask = spike_mask';
 spike_inds = find(spike_mask) - spike_offset;
 
@@ -123,7 +132,7 @@ for ch = 1:numel(rippleStats.locs)
         end
         
         % plot examples with rejection reason if applicable
-        if do_plots && rej_ind(rip) == 1
+        if do_plots
             clf
             
             yyaxis left
@@ -155,7 +164,7 @@ for ch = 1:numel(rippleStats.locs)
     
     end
     
-    rippleStats.density{ch} = sfreq * 60 * numel(rippleStats.locs{ch}) / size(LFPdat,2);
+    rippleStats.density{ch} = sfreq * 60 * numel(rippleStats.locs{ch}) / length(LFPdat);
     
     % could be later cross-referenced to backed up rippleStats if needed
     rippleStats.patch{ch} = rej_ind;

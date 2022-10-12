@@ -1,7 +1,7 @@
 function [spike_mask, spike_regs] = detectSpikes_IAV(dat, fs, hge, hf_factor, spike_factor, spike_score_cutoff, spike_pad, hf_shift)
 % v2 edit to adjust for sampling rate
 nanMask = isnan(dat(:,1));
-dat(nanMask,:) = 0;
+dat(nanMask,:) = [];
 % CHARLIE: I used the following parameters to good effect when I tested
 % this on your cortical high gamma events:
 if nargin < 8
@@ -28,7 +28,8 @@ if nargin < 3 || isempty(hge)
     end
     
         hge = abs(hilbert(filtfilt(b,a,dat)));
-    hge = uint16(hge*100);%multiplied by 100 to preserve acceptable resolution once converted to uint16;
+    hge = uint16(hge*100);
+    %multiplied by 100 to preserve acceptable resolution once converted to uint16;
 end %change last argument to zero to reduce memory overhead
 
 num_channels = size(dat,2);
@@ -84,10 +85,20 @@ end
 
 % spike mask
 
-spike_mask = false(size(dat));
+spike_mask_clipped = false(size(dat));
 for n = 1:num_channels
-    spike_mask(:,n) = bounds2mask(spike_regs{n}, length(dat), spike_pad);
+    spike_mask_clipped(:,n) = bounds2mask(spike_regs{n}, length(dat), spike_pad);
 end
+
+ii = find(~nanMask);
+spike_mask = false(size(dat,2),length(nanMask));
+ for n = 1:num_channels
+    ii_n = ii(spike_mask_clipped(:,n));
+    spike_mask(:,ii_n) = true;
+
+ end
+
+
 
 disp('done')
 

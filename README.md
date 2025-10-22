@@ -2,10 +2,11 @@ Ripple Detection and Analysis Toolbox
 
 Supplementary code for 
 Dickey et al. 2022, Verzhbinsky et al. 2025 - MATLAB scripts for detecting and analyzing hippocampal and neocortical ripple events in neural recordings.
+
 ## Overview
 
 This toolbox provides comprehensive methods for:
-- Detection of sharp-wave ripple events in broadband LFP recordings
+- Detection of cortical  ripple events in broadband LFP recordings
 - Cross-correlation analysis between hippocampal and neocortical ripples
 - Statistical assessment of ripple coupling and directionality
 - Preprocessing of Utah array data
@@ -125,7 +126,7 @@ Customize ripple detection by modifying parameters:
 
 ```matlab
 params = struct();
-params.freqRange = [80 250];        % Ripple frequency band (Hz)
+params.freqRange = [70 100];        % Ripple frequency band (Hz)
 params.thresholdSD = 3;             % Detection threshold (SD above mean)
 params.minDuration = 15;            % Minimum duration (ms)
 params.maxDuration = 500;           % Maximum duration (ms)

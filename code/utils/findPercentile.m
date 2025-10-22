@@ -4,9 +4,20 @@ function pctle = findPercentile(X,val,mode)
 
     if size(X,1) == 1
         [A,~] = sort(X(:));
-        nLess = sum(A < val);
-        nX = length(X(:));
-        pctle = nLess/nX;
+        
+        switch mode
+            case 'pcn' % compute percentile
+                nLess = sum(A < val);
+                nX = length(X(:));
+                pctle = nLess/nX;
+            case 'pval' % compute pval
+                n = sum(A >= val);
+                nX = length(X(:));
+                pctle= n/nX;
+        end
+    
+
+
     else
         pctle = nan(1,size(X,2));
         

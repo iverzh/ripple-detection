@@ -16,12 +16,12 @@
 
 function [event_PRTH, null_PRTH] = computePRTH(rippleStats, recordingState, ch, win, binWidth, nIter, ...
                                                 histEventsPath, mode, sleepfiles_set, subject, ch2, ...
-                                                flipFlag)
+                                                eventMask, flipFlag, nullFlag)
 
 
 edges = -win+(binWidth/2):binWidth:win;
 
-peri_event = nan(1e8,1);
+peri_event = nan(1e4,1);
 null_PRTH  = zeros(nIter,length(edges)-1);
 
 count = 1;
@@ -46,6 +46,7 @@ for s = 1:length(sleepfiles_set)
     % remove ripples with indices less than window size
     ripple_inds = rippleStats.locs{ch};
     ripple_inds(isnan(ripple_inds)) = [];
+    ripple_inds(~eventMask(ripple_inds)) = [];
  
     if s == 1
         ripple_inds = ripple_inds(ripple_inds <= sum(rippleStats.recordingLength(1))); 
@@ -307,11 +308,14 @@ for s = 1:length(sleepfiles_set)
         % this could be done in a better way using the limits of the actual data
         event_mask(max(NREM_mask_ind(ripple_inds))+win+1:end) = [];
         
-        ripple_inds(NREM_mask_ind(ripple_inds) < win) = [];
+        ripple_inds(NREM_mask_ind(ripple_inds) <= win) = [];
 
-
-        nullDistributionMat = computeNullDistributionParPool(event_mask, ripple_inds, nIter, NREM_mask_ind, win, edges, rippleStats.fs);
-        null_PRTH = null_PRTH + nullDistributionMat;
+        if nullFlag
+            nullDistributionMat = computeNullDistributionParPool(event_mask, ripple_inds, nIter, NREM_mask_ind, win, edges, rippleStats.fs);
+            null_PRTH = null_PRTH + nullDistributionMat;
+        else
+            null_PRTH = nan(1,length(edges)-1);
+        end
         
         % generate structure for peri-ripple time histogram of spindle onsets
         for ripple = 1:numel(ripple_inds)

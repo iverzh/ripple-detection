@@ -1,61 +1,208 @@
-Supplementary Files for Dickey et al. 2022
+Ripple Detection and Analysis Toolbox
 
-All scrips should be run from the 'code/' directory.
+Supplementary code for 
+Dickey et al. 2022, Verzhbinsky et al. 2025 - MATLAB scripts for detecting and analyzing hippocampal and neocortical ripple events in neural recordings.
+## Overview
 
-### AnalyzeCrossCorrelogram_HC.m ###
-Analyzes the ripple cross correlogram for neocortical ripples centered around hippocampal ripples.
-This script computes:
-- the percent of channel pairs that are significantly  
-- the percent of significantly modulated channel pairs that show signficant sidedness
-- the percent of sided channels where the neocortex is leading
+This toolbox provides comprehensive methods for:
+- Detection of sharp-wave ripple events in broadband LFP recordings
+- Cross-correlation analysis between hippocampal and neocortical ripples
+- Statistical assessment of ripple coupling and directionality
+- Preprocessing of Utah array data
 
-The script loads a preprocessed .mat file for each subject that contains a structure (subjPRTH) 
-with the following format:
+## Requirements
 
-subjPRTH.chanLabels: labels for all neocortical channels
-subjPRTH.chanLabelsHC: labels for all hippocamcal channels
+- MATLAB (R2018b or later recommended)
+- Signal Processing Toolbox
+- Statistics and Machine Learning Toolbox
 
-subjPRTH.HC.eventPRTH: cross correlograms for each hippocampal-neocortical channel pair in 1 ms 
-bins with a window of 6 secs (+- 3 secs)
-subjPRTH.HC.nullPRTH: cross correlograms for the null distribution of each channel pair in 1ms. 
-Each pair has 1000 iterations of a shuffled null distrubtion to compute significance of the 
-real data. 
-subjPRTH.HC.nRipples: number of ripples used for each channel pair.
+## Installation
 
-### AnalyzeCrossCorrelogram_NCNC.m ###
-Analyzes the ripple cross correlogram for neocortical ripples centered around neocortical ripples in
-other locations.
-This script computes:
-- the percent of channel pairs that are significantly  
-- the percent of significantly modulated channel pairs that show signficant sidedness
+1. Clone the repository:
+```bash
+git clone https://github.com/iverzh/ripple-detection.git
+cd ripple-detection
+```
 
-The format follows the same format as described in the AnalyzeCrossCorrelogram_HC.m section.
+2. Add the code directory to your MATLAB path:
+```matlab
+addpath(genpath('code/'))
+```
 
-### RippleSelection.m ###
-This script loads a braodband LFP .mat file (channels x time samples), and runs ripple selection.
-The script has two steps:
-- Ripple detection, where a set of preliminiary ripple events are detected. This can be turned off 
-if these events were already detected/
-- Ripple Selection, where the fine tuned rejection criteria are applied to the list of prelim events.
+## Usage
 
-The output rippleStats structure contains the following fields:
-- duration: duration of each ripple in ms for each channel.
-- HGz: max z score of the high gamma (200+ Hz) analytic amplitude for each ripple.
-- InterRipPeriod: period between adjacent ripples within the same channel in seconds.
-- oscFreq; the frequency of each ripple event.
-- rippleAmp: the maximum analytic amplitude of each ripple in microV.
-- window: the start and end time for each ripple in samples.
-- locs: locations of the center of each ripple in samples. 
-- locs_sleep: locations of the ripples in each data segment (only relevant if multiple
-data segments are used);
-- density: density / minute of ripple events in each channel.
-- chanLabel: the names of each bipolar channel.
-- RejectParans: the rejection parameters that were used.
-- rejectVec: an array of the rejection condition that was triggered for each preliminary ripple
-event.
+**Important:** All scripts should be run from the `code/` directory.
 
-### PreprocessUtahArray.m ###
-This script removes unit spikes and downsamples raw utah array data.
-It loads a series of .ns5 files that contain the raw utah array data and an array of unit spike times. 
-See data/units.mat for an example of how the unit spike times should be formatted.
+### 1. Preprocessing Utah Array Data
 
+```matlab
+% Navigate to code directory
+cd code/
+
+% Run spike removal and downsampling
+RemoveUnitSpikes
+```
+
+**Input Requirements:**
+- Raw Utah array data files (`.ns5` format)
+- Unit spike times structure with fields:
+  - `spikeTimes`: Cell array of spike times for each unit
+  - `channelID`: Channel identification for each unit
+  - `samplingRate`: Sampling frequency of the recording
+
+**Output:**
+- Cleaned and downsampled LFP data
+- Preprocessed data ready for ripple detection
+
+### 2. Ripple Detection
+
+```matlab
+% Run ripple detection on broadband LFP
+RunRippleDetection
+```
+
+**Input Requirements:**
+- Broadband LFP data matrix (channels × time samples)
+- Sampling frequency
+- Optional: Detection parameters structure with fields:
+  - `freqRange`: Frequency range for ripple band (default: [80-250] Hz)
+  - `thresholdSD`: Detection threshold in standard deviations
+  - `minDuration`: Minimum ripple duration in ms
+  - `maxDuration`: Maximum ripple duration in ms
+
+**Output - rippleStats Structure:**
+| Field | Description | Format |
+|-------|-------------|---------|
+| `duration` | Duration of each ripple (ms) | [nRipples × nChannels] |
+| `HGz` | Max z-score of high gamma (200+ Hz) amplitude | [nRipples × nChannels] |
+| `InterRipPeriod` | Time between adjacent ripples (seconds) | [nRipples-1 × nChannels] |
+| `oscFreq` | Peak frequency of each ripple event | [nRipples × nChannels] |
+| `rippleAmp` | Maximum analytic amplitude (μV) | [nRipples × nChannels] |
+| `window` | Start and end time (samples) | [nRipples × 2 × nChannels] |
+| `locs` | Center location of ripples (samples) | [nRipples × nChannels] |
+| `locs_sleep` | Ripple locations per data segment | Cell array |
+| `density` | Ripple rate (events/minute) | [1 × nChannels] |
+| `chanLabel` | Bipolar channel names | Cell array |
+| `RejectParams` | Rejection criteria used | Structure |
+| `rejectVec` | Rejection condition triggered per event | [nRipples × 1] |
+
+### 3. Cross-Correlation Analysis
+
+#### Hippocampal-Neocortical Analysis
+```matlab
+% Analyze HC-NC ripple coupling
+AnalyzeCrossCorrelogram_HC
+```
+
+#### Neocortical-Neocortical Analysis
+```matlab
+% Analyze NC-NC ripple coupling
+AnalyzeCrossCorrelogram_NC
+```
+
+**Input Requirements:**
+Preprocessed `.mat` file containing `subjPRTH` structure:
+- `chanLabels`: Neocortical channel labels (cell array)
+- `chanLabelsHC`: Hippocampal channel labels (cell array)
+- `HC.eventPRTH`: Cross-correlograms (1ms bins, ±3s window)
+  - Format: [nChannelPairs × 6000 bins]
+- `HC.nullPRTH`: Null distribution (1000 shuffled iterations)
+  - Format: [nChannelPairs × 6000 bins × 1000]
+- `HC.nRipples`: Number of ripples per channel pair
+
+**Output Metrics:**
+- Percentage of significantly modulated channel pairs
+- Percentage showing significant directional coupling
+- Percentage where neocortex leads hippocampus
+- Statistical significance values (p < 0.05, FDR corrected)
+- Cross-correlation peak times and amplitudes
+
+## Advanced Configuration
+
+### Detection Parameters
+
+Customize ripple detection by modifying parameters:
+
+```matlab
+params = struct();
+params.freqRange = [80 250];        % Ripple frequency band (Hz)
+params.thresholdSD = 3;             % Detection threshold (SD above mean)
+params.minDuration = 15;            % Minimum duration (ms)
+params.maxDuration = 500;           % Maximum duration (ms)
+params.minInterRippleInterval = 50; % Minimum time between events (ms)
+```
+
+### Null Distribution Settings
+
+Configure statistical testing:
+
+```matlab
+nullParams = struct();
+nullParams.nShuffles = 1000;        % Number of shuffle iterations
+nullParams.shuffleMethod = 'circular'; % 'circular' or 'random'
+nullParams.alpha = 0.05;            % Significance level
+nullParams.multipleComparison = 'bonferroni'; % Correction method
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Memory errors with large datasets:**
+   - Process data in segments
+   - Reduce sampling rate if appropriate
+   - Increase MATLAB heap space
+
+2. **Detection sensitivity:**
+   - Adjust `thresholdSD` parameter
+   - Verify frequency range matches your ripple characteristics
+   - Check signal quality and noise levels
+
+3. **Statistical significance:**
+   - Ensure sufficient number of events (>50 recommended)
+   - Verify null distribution convergence
+   - Consider multiple comparison corrections
+
+## Citation
+
+If you use this code in your research, please cite:
+
+```bibtex
+@article{dickey2022,
+  title={Cortical Ripples during NREM Sleep and Waking in Humans},
+  author={Dickey, Charles W. and Verzhbinsky, Ilya A. and Jiang, Xi and 
+          Rosen, Burke Q. and Kajfez, Sophie and Stedelin, Brittany and 
+          Shih, Jerry J. and Ben-Haim, Sharona and Raslan, Ahmed M. and 
+          Eskandar, Emad N. and Gonzalez-Martinez, Jorge and Cash, Sydney S. and 
+          Halgren, Eric},
+  journal={Journal of Neuroscience},
+  volume={42},
+  number={44},
+  pages={8378--8389},
+  year={2022},
+  doi={10.1523/JNEUROSCI.0742-22.2022}
+}
+
+@article{verzhbinsky2024co,
+  title={Co-occurring ripple oscillations facilitate neuronal interactions between cortical locations in humans},
+  author={Verzhbinsky, Ilya A and Rubin, Daniel B and Kajfez, Sophie and Bu, Yiting and Kelemen, Jessica N and Kapitonava, Anastasia and Williams, Ziv M and Hochberg, Leigh R and Cash, Sydney S and Halgren, Eric},
+  journal={Proceedings of the National Academy of Sciences},
+  volume={121},
+  number={1},
+  pages={e2312204121},
+  year={2024},
+  doi={10.1073/pnas.2312204121}
+}
+```
+
+## License
+
+This project is licensed under the MIT License - see the repository for details.
+
+## Contact
+
+For questions or issues, please open an issue on the [GitHub repository](https://github.com/iverzh/ripple-detection/issues).
+
+## Acknowledgments
+
+This work was supported by NIH grants and tGggOffice of Naval Research. We thank all participants and clinical teams involved in data collection.
